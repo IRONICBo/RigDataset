@@ -2,6 +2,7 @@
 """
 import os
 import sys
+import shutil
 import argparse
 import bpy
 import tqdm
@@ -10,6 +11,10 @@ import tqdm
 argparser = argparse.ArgumentParser(description="Extract rig dataset")
 argparser.add_argument("dataset_dir", type=str)
 argparser.add_argument("output_dir", type=str)
+argparser.add_argument("--save-orig", action="store_true",
+                       help="Save original file")
+argparser.add_argument("--save-blend", action="store_true",
+                       help="Save blend file")
 argparser.add_argument("--export-skeleton", type=bool, default=True,
                        help="Export skeleton")
 argparser.add_argument("--export-mesh", type=bool, default=True,
@@ -33,40 +38,39 @@ def process(index: int, dataset_dir: str, output_dir: str, relpath: str, opts: a
         relpath (str): relative path to the file
     """
     print(f"Processing: {relpath}")
-    bpy.ops.object.select_all(action='SELECT')
-
-    # Delete all transformations
-    # bpy.ops.object.mode_set(mode='OBJECT')
-    # for obj in bpy.context.selected_objects:
-    #     obj.location = (0, 0, 0)
-    #     obj.rotation_euler = (0, 0, 0)
-    #     obj.scale = (1, 1, 1)
-    #     bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS', center='BOUNDS')
-    
     bpy.ops.wm.read_factory_settings(use_empty=True)
     bpy.ops.import_scene.fbx(filepath=os.path.join(dataset_dir, relpath))
     # Apply all transformations
     # bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-    # Clear parent and keep transformation
+    # # Clear parent and keep transformation
     # bpy.ops.object.parent_clear(type='CLEAR_KEEP_TRANSFORM')
-    # Apply all transformations to zero out to current scene level
+    # # Apply all transformations to zero out to current scene level
     # bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
-    base_path = os.path.splitext(relpath)[0]
+    base_path, ext = os.path.splitext(relpath)
+    os.makedirs(os.path.dirname(os.path.join(
+        output_dir, base_path)), exist_ok=True)
+
     target_base_path = base_path
     if opts.number > 0:
         # generate basename with <number> digits, padding with zeros
         target_base_path = f"{index:d}"
         target_base_path = target_base_path.zfill(opts.number)
 
+    if opts.save_orig:
+        original_path = os.path.join(
+            output_dir, target_base_path+"_orig" + ext)
+        shutil.copyfile(os.path.join(dataset_dir, relpath), original_path)
+        print(f"Copied: {original_path}")
+
+    if opts.save_blend:
+        blend_path = os.path.join(output_dir, target_base_path + ".blend")
+        bpy.ops.wm.save_as_mainfile(filepath=blend_path)
+        print(f"Saved: {blend_path}")
+
     obj_path = os.path.join(output_dir, target_base_path + ".obj")
-    fbx_path = os.path.join(output_dir, target_base_path + ".fbx")
     bvh_path = os.path.join(output_dir, target_base_path + ".bvh")
     os.makedirs(os.path.dirname(obj_path), exist_ok=True)
-    os.makedirs(os.path.dirname(fbx_path), exist_ok=True)
-
-    # export fbx
-    # bpy.ops.export_scene.fbx(filepath=fbx_path, use_selection=False)
 
     # Check if the file has a skeleton
     has_skeleton = False
@@ -79,26 +83,17 @@ def process(index: int, dataset_dir: str, output_dir: str, relpath: str, opts: a
         print(f"Skipping: {relpath}, no skeleton found")
         return False
 
-    bpy.ops.object.select_all(action='SELECT')
-    # for obj in bpy.context.selected_objects:
-    #     center = obj.location + obj.matrix_world @ obj.data.center
-    #     bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS', center='BOUNDS')
-    #     obj.location = (0, 0, 0)
+    bpy.ops.object.select_all(action='DESELECT')
     if opts.export_mesh:
         bpy.ops.wm.obj_export(filepath=obj_path, export_materials=False,
                               export_normals=opts.export_normals, export_uv=opts.export_uv,
                               export_triangulated_mesh=True, apply_modifiers=False)
-        # bpy.ops.export_scene.obj(filepath=obj_path, use_selection=True, use_mesh_modifiers=False)
         print(f"Exported: {obj_path}")
 
     if opts.export_skeleton:
         for obj in bpy.context.scene.objects:
             if obj.type == 'ARMATURE':
-                bpy.ops.object.select_all(action='SELECT')
-                # for obj in bpy.context.selected_objects:
-                #     center = obj.location + obj.matrix_world @ obj.data.center
-                #     bpy.ops.object.origin_set(type='ORIGIN_CENTER_OF_MASS', center='BOUNDS')
-                #     obj.location = (0, 0, 0)
+                bpy.ops.object.select_all(action='DESELECT')
                 obj.select_set(True)
                 bpy.context.view_layer.objects.active = obj
                 bpy.ops.export_anim.bvh(

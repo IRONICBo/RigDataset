@@ -8,6 +8,8 @@ import argparse
 class OBJData:
     def __init__(self, file_path):
         self.file_path = file_path
+        self.vertices = np.array([])
+        self.faces = np.array([])
         self.vertices, self.faces = self.load_obj(file_path)
 
     def load_obj(self, filename):
@@ -74,6 +76,32 @@ class OBJData:
         print(f"Exported vertices shape: {self.vertices.shape}")
         print(f"Exported faces shape: {self.faces.shape}")
 
+    def load_from(self, directory):
+        # Find the numpy files in the directory
+        files = os.listdir(directory)
+        vertices_file = None
+        faces_file = None
+        for file in files:
+            if file.endswith("_vertices.npy"):
+                vertices_file = os.path.join(directory, file)
+            elif file.endswith("_faces.npy"):
+                faces_file = os.path.join(directory, file)
+
+        # Load data from numpy files
+        if vertices_file and faces_file:
+            self.vertices = np.load(vertices_file)
+            self.faces = np.load(faces_file)
+        else:
+            raise FileNotFoundError("Required numpy files not found in the directory.")
+
+    def export_to_obj(self, output_path):
+        with open(output_path, 'w') as f:
+            f.write("# Exported OBJ file\n")
+            for vertex in self.vertices:
+                f.write(f"v {vertex[0]} {vertex[1]} {vertex[2]}\n")
+            for face in self.faces:
+                f.write("f " + " ".join([str(v + 1) for v in face]) + "\n")
+
 def process_obj_files(input_dir, output_dir):
     obj_files = [f for f in os.listdir(input_dir) if f.endswith('.obj')]
     for obj_file in tqdm.tqdm(obj_files, desc="Processing OBJ files"):
@@ -97,3 +125,8 @@ if __name__ == '__main__':
 # Example usage:
 # obj_data = OBJData('./path/to/your.obj')
 # obj_data.show()
+
+# Example usage
+# obj_data = OBJData()
+# obj_data.load_from("path")
+# obj_data.export_to_obj("output.obj")

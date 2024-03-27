@@ -11,6 +11,11 @@ class BVHData:
         # load in the static and motion data from indicated bvh file
         self.file_path = file_path
         self.load(file_path)
+        
+        # For export to bvh
+        self.joint_names = []
+        self.joint_parents = []
+        self.joint_offsets = []
 
     def load(self, filename):
         f = open(filename, "r")
@@ -161,6 +166,58 @@ class BVHData:
         else:
             print("Required numpy files not found in the directory.")
 
+    def load_from(self, directory):
+        # Find the numpy files in the directory
+        files = os.listdir(directory)
+
+        # Find skel, link, and names files
+        skel_file = None
+        link_file = None
+        names_file = None
+        for file in files:
+            if file.endswith("_skel.npy"):
+                skel_file = os.path.join(directory, file)
+            elif file.endswith("_link.npy"):
+                link_file = os.path.join(directory, file)
+            elif file.endswith("_names.npy"):
+                names_file = os.path.join(directory, file)
+
+        # Load data from numpy files
+        if skel_file and link_file and names_file:
+            self.joint_offsets = np.load(skel_file)
+            links = np.load(link_file)
+            self.joint_names = np.load(names_file, allow_pickle=True)
+
+            # Reconstruct parents array from links
+            self.joint_parents = np.full(len(self.joint_names), -1, dtype=int)
+            for child, parent in links:
+                self.joint_parents[child] = parent
+        else:
+            raise FileNotFoundError("Required numpy files not found in the directory.")
+
+    def export_to_bvh(self, output_path):
+        with open(output_path, 'w') as f:
+            f.write("HIERARCHY\n")
+            for i, name in enumerate(self.joint_names):
+                if self.joint_parents[i] == -1:
+                    f.write(f"ROOT {name}\n")
+                else:
+                    f.write(f"\t" * self._get_indent_level(i) + f"JOINT {name}\n")
+                f.write(f"\t" * self._get_indent_level(i) + "{\n")
+                offset = self.joint_offsets[i]
+                f.write(f"\t" * (self._get_indent_level(i) + 1) + f"OFFSET {offset[0]} {offset[1]} {offset[2]}\n")
+                if i == len(self.joint_names) - 1 or self.joint_parents[i + 1] != i:
+                    f.write(f"\t" * self._get_indent_level(i) + "}\n")
+            f.write("MOTION\nFrames: 1\nFrame Time: 0.033333\n")
+            f.write("0.000000 " * (len(self.joint_names) * 3) + "\n")
+
+    def _get_indent_level(self, index):
+        indent_level = 0
+        while self.joint_parents[index] != -1:
+            indent_level += 1
+            index = self.joint_parents[index]
+        return indent_level
+
 def process_bvh_files(input_dir, output_dir):
     bvh_files = [f for f in os.listdir(input_dir) if f.endswith('.bvh')]
     for bvh_file in tqdm.tqdm(bvh_files, desc="Processing BVH files"):
@@ -180,3 +237,8 @@ if __name__ == '__main__':
         os.makedirs(args.output_dir, exist_ok=True)
 
     process_bvh_files(args.input_dir, args.output_dir)
+
+# Export bvh example usage
+# bvh_data = BVHData()
+# bvh_data.load_from("xxxpath")
+# bvh_data.export_to_bvh("output.bvh")
